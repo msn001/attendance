@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Teacher Attendance</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root{
+  --bg:#0f1117;
+  --surface:#1a1d27;
+  --surface2:#222536;
+  --surface3:#2a2e42;
+  --border:#2e3247;
+  --border2:#3d4260;
+  --text:#f0f2ff;
+  --muted:#8b90b8;
+  --hint:#555a7a;
+  --accent:#6c63ff;
+  --accent2:#8b85ff;
+  --accent-fg:#fff;
+  --green:#22c55e;
+  --green-bg:rgba(34,197,94,.12);
+  --red:#ef4444;
+  --red-bg:rgba(239,68,68,.12);
+  --blue:#3b82f6;
+  --blue-bg:rgba(59,130,246,.12);
+  --amber:#f59e0b;
+  --amber-bg:rgba(245,158,11,.12);
+  --r:12px; --r-lg:18px; --r-xl:24px;
+}
+
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
+
+/* ── Layout ── */
+.app{display:flex;flex-direction:column;min-height:100vh}
+
+header{
+  background:var(--surface);
+  border-bottom:1px solid var(--border);
+  padding:0 1.5rem;
+  height:60px;
+  display:flex;align-items:center;justify-content:space-between;
+  position:sticky;top:0;z-index:50;
+  backdrop-filter:blur(12px);
+}
+.logo{font-size:16px;font-weight:700;letter-spacing:-.5px;display:flex;align-items:center;gap:10px}
+.logo-icon{width:32px;height:32px;border-radius:10px;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:16px}
+.nav{display:flex;gap:4px}
+.nav-btn{padding:7px 14px;border-radius:8px;border:none;background:transparent;font-family:inherit;font-size:13px;font-weight:500;color:var(--muted);cursor:pointer;transition:all .15s}
+.nav-btn:hover{background:var(--surface2);color:var(--text)}
+.nav-btn.active{background:var(--accent);color:#fff}
+
+main{flex:1;padding:1.5rem;max-width:1000px;margin:0 auto;width:100%}
+.screen{display:none}.screen.active{display:block}
+
+/* ── Cards ── */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden;margin-bottom:1.25rem}
+.card-head{padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.card-title{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.8px}
+.card-body{padding:20px}
+
+/* ── Clock ── */
+.clock{background:linear-gradient(135deg,var(--accent) 0%,#9b59f7 100%);border-radius:var(--r-xl);padding:20px 24px;margin-bottom:1.25rem;display:flex;justify-content:space-between;align-items:center}
+.clock-date{font-size:14px;font-weight:500;color:rgba(255,255,255,.8)}
+.clock-time{font-family:'JetBrains Mono',monospace;font-size:28px;font-weight:700;color:#fff;letter-spacing:-1px}
+
+/* ── Grid ── */
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:1.25rem}
+@media(max-width:640px){.grid2{grid-template-columns:1fr}.clock-time{font-size:22px}}
+
+/* ── QR Scan result ── */
+.scan-result{min-height:220px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;padding:2rem}
+.scan-icon{font-size:52px;animation:pop .4s cubic-bezier(.34,1.56,.64,1)}
+@keyframes pop{from{transform:scale(0);opacity:0}to{transform:scale(1);opacity:1}}
+.scan-name{font-size:22px;font-weight:700}
+.scan-time{font-family:'JetBrains Mono',monospace;font-size:16px;color:var(--muted)}
+.scan-pill{padding:6px 18px;border-radius:99px;font-size:13px;font-weight:600}
+
+/* ── Today list ── */
+.today-list{display:flex;flex-direction:column;gap:8px;max-height:300px;overflow-y:auto}
+.today-item{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;background:var(--surface2);border-radius:var(--r);border:1px solid var(--border)}
+.t-name{font-size:14px;font-weight:600}
+.t-time{font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:2px}
+
+/* ── Badges ── */
+.badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:99px;font-size:11px;font-weight:700;letter-spacing:.3px}
+.b-in{background:var(--green-bg);color:var(--green)}
+.b-out{background:var(--blue-bg);color:var(--blue)}
+.b-absent{background:var(--red-bg);color:var(--red)}
+
+/* ── Buttons ── */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:9px 18px;border-radius:var(--r);border:1px solid var(--border);background:var(--surface2);font-family:inherit;font-size:13px;font-weight:600;color:var(--text);cursor:pointer;transition:all .15s;white-space:nowrap}
+.btn:hover{border-color:var(--border2);background:var(--surface3)}
+.btn-primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+.btn-primary:hover{background:var(--accent2);border-color:var(--accent2)}
+.btn-danger{color:var(--red);border-color:rgba(239,68,68,.3)}
+.btn-danger:hover{background:var(--red-bg)}
+.btn-sm{padding:5px 12px;font-size:12px}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+
+/* ── Forms ── */
+.form-group{display:flex;flex-direction:column;gap:6px}
+.label{font-size:12px;font-weight:600;color:var(--muted);letter-spacing:.3px}
+.input{height:40px;padding:0 12px;border-radius:var(--r);border:1px solid var(--border);background:var(--surface2);font-family:inherit;font-size:14px;color:var(--text);outline:none;transition:border-color .15s;width:100%}
+.input:focus{border-color:var(--accent)}
+.input::placeholder{color:var(--hint)}
+.form-row{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:10px;align-items:end}
+@media(max-width:640px){.form-row{grid-template-columns:1fr 1fr;}.form-row .btn{grid-column:span 2}}
+
+/* ── Table ── */
+.tbl{width:100%;border-collapse:collapse;font-size:13px}
+.tbl th{padding:9px 14px;text-align:left;font-size:11px;font-weight:700;color:var(--hint);text-transform:uppercase;letter-spacing:.6px;border-bottom:1px solid var(--border)}
+.tbl td{padding:11px 14px;border-bottom:1px solid var(--border)}
+.tbl tr:last-child td{border-bottom:none}
+.tbl tfoot td{font-weight:700;background:var(--surface2);border-top:1px solid var(--border2)}
+.edit-btn{cursor:pointer;color:var(--hint);font-size:11px;padding:2px 6px;border-radius:6px;transition:all .12s;font-family:'JetBrains Mono',monospace}
+.edit-btn:hover{background:var(--surface3);color:var(--accent)}
+
+/* ── Summary cards ── */
+.summary{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding:16px 20px;border-bottom:1px solid var(--border)}
+@media(max-width:640px){.summary{grid-template-columns:repeat(2,1fr)}}
+.sum-card{background:var(--surface2);border-radius:var(--r);padding:14px;text-align:center}
+.sum-num{font-size:24px;font-weight:800;font-family:'JetBrains Mono',monospace;line-height:1}
+.sum-label{font-size:11px;color:var(--muted);margin-top:4px;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+.sum-present .sum-num{color:var(--green)}
+.sum-absent  .sum-num{color:var(--red)}
+.sum-hours   .sum-num{color:var(--blue)}
+.sum-total   .sum-num{color:var(--accent)}
+
+/* ── Filter bar ── */
+.filter-bar{display:flex;gap:8px;align-items:center;margin-bottom:1.25rem;flex-wrap:wrap}
+.select{height:38px;padding:0 10px;border-radius:var(--r);border:1px solid var(--border);background:var(--surface);font-family:inherit;font-size:13px;color:var(--text);outline:none;cursor:pointer}
+
+/* ── Messages ── */
+.msg{padding:12px 16px;border-radius:var(--r);font-size:14px;font-weight:500;margin-bottom:1rem;animation:slideIn .2s ease}
+@keyframes slideIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+.msg-ok  {background:var(--green-bg);color:var(--green);border:1px solid rgba(34,197,94,.25)}
+.msg-err {background:var(--red-bg);  color:var(--red);  border:1px solid rgba(239,68,68,.25)}
+.msg-info{background:var(--blue-bg); color:var(--blue);  border:1px solid rgba(59,130,246,.25)}
+
+/* ── QR grid ── */
+.qr-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1rem;margin-top:1rem}
+.qr-card{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-lg);padding:1.25rem;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px}
+.qr-wrap{background:#fff;padding:10px;border-radius:10px}
+.qr-name{font-size:14px;font-weight:700}
+.qr-sub{font-size:12px;color:var(--muted)}
+
+/* ── Single kiosk QR ── */
+.kiosk-qr{display:flex;flex-direction:column;align-items:center;gap:14px;padding:1.5rem}
+.kiosk-qr .qr-wrap{padding:16px}
+
+/* ── PIN pad ── */
+.pin-pad-wrap{display:flex;flex-direction:column;align-items:center;gap:18px;padding:1.5rem 1rem}
+.pin-dots{display:flex;gap:14px}
+.pin-dot{width:16px;height:16px;border-radius:50%;border:2px solid var(--border2);background:transparent;transition:all .15s}
+.pin-dot.filled{background:var(--accent);border-color:var(--accent)}
+.pin-dot.err{background:var(--red);border-color:var(--red)}
+.keypad{display:grid;grid-template-columns:repeat(3,64px);gap:10px}
+.key{height:64px;border-radius:var(--r-lg);border:1px solid var(--border);background:var(--surface2);color:var(--text);font-family:'JetBrains Mono',monospace;font-size:22px;font-weight:600;cursor:pointer;transition:all .12s;display:flex;align-items:center;justify-content:center}
+.key:hover{background:var(--surface3);border-color:var(--border2)}
+.key:active{transform:scale(.94)}
+.key-clear,.key-back{font-size:13px;font-family:'Inter',sans-serif;color:var(--muted)}
+.pin-hint{font-size:13px;color:var(--muted);text-align:center}
+
+/* ── Spinner ── */
+.spin{display:inline-block;width:14px;height:14px;border:2px solid var(--border2);border-top-color:var(--accent);border-radius:50%;animation:spin .6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── Modals ── */
+.overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;align-items:center;justify-content:center;padding:1rem;backdrop-filter:blur(4px)}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-xl);padding:2rem;width:100%;max-width:380px;box-shadow:0 25px 80px rgba(0,0,0,.5)}
+.modal-title{font-size:17px;font-weight:700;margin-bottom:6px}
+.modal-sub{font-size:13px;color:var(--muted);margin-bottom:1.5rem}
+
+.empty{font-size:13px;color:var(--hint);padding:.5rem 0}
+
+/* ── Print ── */
+@media print{
+  header,.nav,.filter-bar,.no-print{display:none!important}
+  .screen{display:none!important}
+  #s-report.active{display:block!important}
+  body{background:white;color:black;font-size:12px}
+  main{padding:0;max-width:100%}
+  .card{border:1px solid #ccc;page-break-inside:avoid}
+  .surface,.surface2{background:white!important}
+  .print-head{display:block!important}
+  :root{--text:#000;--muted:#555;--border:#ccc;--surface:#fff;--surface2:#f5f5f5;--surface3:#eee}
+}
+.print-head{display:none;margin-bottom:1rem;border-bottom:2px solid #000;padding-bottom:.5rem}
+.print-head h1{font-size:18px}
+.print-head p{font-size:12px;color:#555}
+
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
+</style>
+</head>
+<body>
+<div class="app">
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">📋</div>
+    Attendance
+  </div>
+  <nav class="nav">
+    <button class="nav-btn active" id="n-live"   onclick="goto('live')">Live</button>
+    <button class="nav-btn"        id="n-admin"  onclick="needAdmin('admin')">Manage</button>
+    <button class="nav-btn"        id="n-report" onclick="needAdmin('report')">Report</button>
+    <button class="nav-btn"        id="n-lock"   onclick="lockAdmin()" style="display:none">🔒</button>
+  </nav>
+</header>
+
+<!-- ── Admin password modal ── -->
+<div id="pw-modal" class="overlay">
+  <div class="modal">
+    <div class="modal-title" id="pw-title">Admin Access</div>
+    <div class="modal-sub">Enter the admin password to continue.</div>
+    <div class="form-group" style="margin-bottom:12px">
+      <input type="password" id="pw-input" class="input" placeholder="Password"
+        onkeydown="if(event.key==='Enter')checkPw()">
+    </div>
+    <div id="pw-err" style="font-size:13px;color:var(--red);min-height:18px;margin-bottom:12px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn" onclick="closePwModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="checkPw()">Unlock</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Edit record modal ── -->
+<div id="edit-modal" class="overlay" style="z-index:300">
+  <div class="modal">
+    <div class="modal-title" id="edit-name">Edit Record</div>
+    <div class="modal-sub"   id="edit-date"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+      <div class="form-group">
+        <label class="label">Check-in</label>
+        <input type="time" id="edit-in" class="input">
+      </div>
+      <div class="form-group">
+        <label class="label">Check-out</label>
+        <input type="time" id="edit-out" class="input">
+      </div>
+    </div>
+    <div id="edit-err" style="font-size:13px;color:var(--red);min-height:18px;margin-bottom:12px"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <button class="btn btn-danger btn-sm" onclick="delRecord()">Delete</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-sm" onclick="closeEdit()">Cancel</button>
+        <button class="btn btn-primary btn-sm" id="edit-save" onclick="saveEdit()">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<main>
+
+<!-- ══ LIVE SCREEN ══ -->
+<div id="s-live" class="screen active">
+  <div class="clock">
+    <div class="clock-date" id="cl-date">—</div>
+    <div class="clock-time" id="cl-time">—</div>
+  </div>
+  <div id="live-msg"></div>
+  <div class="grid2">
+    <div class="card">
+      <div class="card-head"><span class="card-title">Enter PIN to Check In / Out</span></div>
+      <div id="pin-area">
+        <div class="pin-pad-wrap">
+          <div class="pin-dots" id="pin-dots">
+            <div class="pin-dot"></div><div class="pin-dot"></div>
+            <div class="pin-dot"></div><div class="pin-dot"></div>
+          </div>
+          <div class="keypad" id="keypad">
+            <button class="key" onclick="pinPress('1')">1</button>
+            <button class="key" onclick="pinPress('2')">2</button>
+            <button class="key" onclick="pinPress('3')">3</button>
+            <button class="key" onclick="pinPress('4')">4</button>
+            <button class="key" onclick="pinPress('5')">5</button>
+            <button class="key" onclick="pinPress('6')">6</button>
+            <button class="key" onclick="pinPress('7')">7</button>
+            <button class="key" onclick="pinPress('8')">8</button>
+            <button class="key" onclick="pinPress('9')">9</button>
+            <button class="key key-clear" onclick="pinClear()">Clear</button>
+            <button class="key" onclick="pinPress('0')">0</button>
+            <button class="key key-back" onclick="pinBack()">⌫</button>
+          </div>
+          <div class="pin-hint">Enter your 4-digit PIN — checks you in or out automatically</div>
+        </div>
+      </div>
+      <div id="scan-result" class="scan-result" style="display:none"></div>
+    </div>
+    <div class="card">
+      <div class="card-head"><span class="card-title">Today's Activity</span></div>
+      <div class="card-body">
+        <div class="today-list" id="today-list"><p class="empty">No check-ins yet today.</p></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ ADMIN SCREEN ══ -->
+<div id="s-admin" class="screen">
+  <div class="card">
+    <div class="card-head"><span class="card-title">Add Teacher</span></div>
+    <div class="card-body">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="label">Full Name</label>
+          <input class="input" id="new-name" placeholder="Ali Khan">
+        </div>
+        <div class="form-group">
+          <label class="label">Subject</label>
+          <input class="input" id="new-sub" placeholder="Mathematics">
+        </div>
+        <div class="form-group">
+          <label class="label">4-digit PIN</label>
+          <input class="input" id="new-pin" maxlength="4" placeholder="1234"
+            style="font-family:'JetBrains Mono',monospace;letter-spacing:4px">
+        </div>
+        <button class="btn btn-primary" id="add-btn" onclick="addTeacher()">Add</button>
+      </div>
+      <div id="admin-msg" style="margin-top:10px"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <span class="card-title">Registered Teachers</span>
+    </div>
+    <div id="teacher-list"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <span class="card-title">Kiosk QR Code — Print &amp; Put on Wall</span>
+      <button class="btn btn-primary btn-sm no-print" onclick="window.print()">🖨 Print</button>
+    </div>
+    <div class="card-body">
+      <p style="font-size:13px;color:var(--muted);margin-bottom:14px">
+        There's only <strong>one</strong> QR code for everyone. Print it once and stick it at the
+        entrance. Any teacher scans it, the Live screen opens, and they type their own 4-digit PIN
+        to check in or out.
+      </p>
+      <div class="form-group" style="margin-bottom:14px">
+        <label class="label">Your site URL (where this file is hosted)</label>
+        <div style="display:flex;gap:8px">
+          <input class="input" id="base-url" placeholder="https://yoursite.netlify.app/attendance.html"
+            style="font-family:'JetBrains Mono',monospace;font-size:12px" oninput="renderQR()">
+        </div>
+      </div>
+      <div id="qr-grid" class="qr-grid"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ REPORT SCREEN ══ -->
+<div id="s-report" class="screen">
+  <div class="print-head">
+    <h1>Teacher Attendance Report</h1>
+    <p id="print-sub"></p>
+  </div>
+  <div class="filter-bar no-print">
+    <select class="select" id="f-teacher" onchange="renderReport()"></select>
+    <select class="select" id="f-month"   onchange="renderReport()"></select>
+    <select class="select" id="f-year"    onchange="renderReport()"></select>
+    <button class="btn btn-primary no-print" onclick="window.print()">🖨 Print</button>
+  </div>
+  <div id="rep-loading" style="display:none;text-align:center;padding:2rem;color:var(--muted)">
+    <div class="spin" style="margin:0 auto 8px;width:20px;height:20px"></div>Loading records…
+  </div>
+  <div id="rep-out"></div>
+</div>
+
+</main>
+</div><!-- end .app -->
+
+<script>
+// ══════════════════════════════════════════════════════════
+//  CONFIG — paste your Apps Script URL here
+// ══════════════════════════════════════════════════════════
+const SCRIPT_URL   = 'https://script.google.com/macros/s/AKfycbzMBcrZEDAB9_u2pJmLEQlMgTz_566Udq688opiP8G8qPtpBc1rC-z9Ix1homUZJ8cm/exec';
+const ADMIN_PASS   = 'admin1234';   // ← change this
+const MONTHS = ['January','February','March','April','May','June',
+                'July','August','September','October','November','December'];
+
+// ── State ────────────────────────────────────────────────
+let teachers     = [];
+let records      = [];   // cached for current view
+let adminOpen    = false;
+let pendingScreen= null;
+let editId       = null;
+
+// ── API ──────────────────────────────────────────────────
+async function api(params) {
+  if (!SCRIPT_URL || SCRIPT_URL === 'YOUR_SCRIPT_URL_HERE')
+    throw new Error('SCRIPT_URL not set in the HTML file.');
+  const url = SCRIPT_URL + '?' + new URLSearchParams(params);
+  const r   = await fetch(url);
+  const d   = await r.json();
+  if (d.error) throw new Error(d.error);
+  return d;
+}
+
+// ── Boot ─────────────────────────────────────────────────
+async function boot() {
+  tick(); setInterval(tick, 1000);
+  try {
+    const d = await api({ action: 'getTeachers' });
+    teachers = d.teachers;
+    await loadTodayRecords();
+    renderToday();
+  } catch(e) {
+    msg('live-msg', '⚠ ' + e.message, 'err');
+  }
+}
+boot();
+
+// ── Clock ────────────────────────────────────────────────
+function tick() {
+  const n = new Date();
+  document.getElementById('cl-date').textContent =
+    n.toLocaleDateString('en-PK',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  document.getElementById('cl-time').textContent =
+    n.toLocaleTimeString('en-PK',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+}
+function localDate(d) {
+  d = d || new Date();
+  return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+}
+function pad(n){ return String(n).padStart(2,'0'); }
+
+// ── Screen routing ───────────────────────────────────────
+function goto(name) {
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('s-'+name).classList.add('active');
+  document.getElementById('n-'+name).classList.add('active');
+  if (name==='report') { buildFilters(); renderReport(); }
+  if (name==='admin')  { renderTeachers(); renderQR(); }
+}
+
+// ── Admin password ───────────────────────────────────────
+function needAdmin(screen) {
+  if (adminOpen) { goto(screen); return; }
+  pendingScreen = screen;
+  document.getElementById('pw-title').textContent =
+    screen==='admin' ? 'Manage Teachers' : 'Monthly Report';
+  document.getElementById('pw-input').value = '';
+  document.getElementById('pw-err').textContent = '';
+  document.getElementById('pw-modal').style.display = 'flex';
+  setTimeout(()=>document.getElementById('pw-input').focus(), 60);
+}
+function checkPw() {
+  if (document.getElementById('pw-input').value === ADMIN_PASS) {
+    adminOpen = true;
+    document.getElementById('pw-modal').style.display = 'none';
+    document.getElementById('n-lock').style.display = '';
+    goto(pendingScreen); pendingScreen = null;
+  } else {
+    document.getElementById('pw-err').textContent = 'Wrong password.';
+    document.getElementById('pw-input').value = '';
+    document.getElementById('pw-input').focus();
+  }
+}
+function closePwModal() { document.getElementById('pw-modal').style.display='none'; }
+function lockAdmin() {
+  adminOpen = false;
+  document.getElementById('n-lock').style.display = 'none';
+  goto('live');
+}
+
+// ── Messages ─────────────────────────────────────────────
+function msg(id, html, type, keep) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.innerHTML = `<div class="msg msg-${type}">${html}</div>`;
+  if (!keep) { clearTimeout(el._t); el._t = setTimeout(()=>el.innerHTML='', 5000); }
+}
+
+// ── PIN pad ──────────────────────────────────────────────
+// Everyone scans the SAME QR code, which just opens this page.
+// They then type their own 4-digit PIN on this keypad; the server
+// figures out whether that's a check-in or check-out.
+let pinBuffer = '';
+let pinBusy   = false;
+
+function renderPinDots(errState) {
+  const dots = document.querySelectorAll('#pin-dots .pin-dot');
+  dots.forEach((d,i) => {
+    d.classList.toggle('filled', i < pinBuffer.length && !errState);
+    d.classList.toggle('err', !!errState);
+  });
+}
+
+function pinPress(digit) {
+  if (pinBusy || pinBuffer.length >= 4) return;
+  pinBuffer += digit;
+  renderPinDots();
+  if (pinBuffer.length === 4) submitPin();
+}
+function pinBack() {
+  if (pinBusy) return;
+  pinBuffer = pinBuffer.slice(0,-1);
+  renderPinDots();
+}
+function pinClear() {
+  if (pinBusy) return;
+  pinBuffer = '';
+  renderPinDots();
+}
+
+// Allow a physical/numeric keyboard too (handy for a kiosk with a USB scanner-keyboard)
+document.addEventListener('keydown', (e) => {
+  if (!document.getElementById('s-live').classList.contains('active')) return;
+  if (/^[0-9]$/.test(e.key)) pinPress(e.key);
+  else if (e.key === 'Backspace') pinBack();
+  else if (e.key === 'Escape') pinClear();
+});
+
+async function submitPin() {
+  pinBusy = true;
+  const pin = pinBuffer;
+  const now = new Date();
+  const dateStr = localDate(now);
+  const timeStr = now.toTimeString().slice(0,5);
+
+  showScan('⏳', 'Checking…', '', 'One moment', 'info');
+  try {
+    const res = await api({ action:'scan', pin, date:dateStr, time:timeStr });
+    if (res.action === 'checkIn') {
+      records.push({id:res.recordId, teacherId:findTeacherIdByName(res.teacher), date:res.date, checkIn:res.time, checkOut:''});
+      showScan('✅', res.teacher, res.time, 'Checked in successfully', 'in');
+    } else {
+      const r = records.find(x=>x.id===res.recordId);
+      if (r) r.checkOut = res.time;
+      const overnight = r && r.date !== dateStr;
+      showScan('👋', res.teacher, res.time,
+        'Checked out' + (overnight ? ' (overnight shift)' : ''), 'out');
+    }
+    renderToday();
+    pinBuffer = ''; renderPinDots();
+  } catch(e) {
+    renderPinDots('err');
+    showScan('❌', 'Incorrect PIN', '', e.message, 'err');
+    setTimeout(()=>{ pinBuffer=''; renderPinDots(); }, 700);
+  }
+  pinBusy = false;
+}
+
+// records store teacherId, but the scan response only gives us a name —
+// this keeps the local cache consistent until the next full reload.
+function findTeacherIdByName(name) {
+  const t = teachers.find(t=>t.name===name);
+  return t ? t.id : name;
+}
+
+function showScan(icon, name, time, status, type) {
+  const colors = {
+    in:  {bg:'var(--green-bg)', c:'var(--green)'},
+    out: {bg:'var(--blue-bg)',  c:'var(--blue)'},
+    info:{bg:'rgba(139,144,184,.15)', c:'var(--muted)'},
+    err: {bg:'var(--red-bg)',   c:'var(--red)'}
+  };
+  const col = colors[type] || colors.err;
+  const pinArea = document.getElementById('pin-area');
+  const result  = document.getElementById('scan-result');
+  pinArea.style.display = 'none';
+  result.style.display  = 'flex';
+  result.innerHTML = `
+    <div class="scan-icon">${icon}</div>
+    <div class="scan-name">${name}</div>
+    ${time ? `<div class="scan-time">${time}</div>` : ''}
+    <div class="scan-pill" style="background:${col.bg};color:${col.c}">${status}</div>
+  `;
+  clearTimeout(window._scanReset);
+  if (type !== 'info') {
+    window._scanReset = setTimeout(()=>{
+      result.style.display = 'none';
+      pinArea.style.display = 'block';
+    }, 2500);
+  }
+}
+
+// ── Today list ───────────────────────────────────────────
+async function loadTodayRecords() {
+  const d  = localDate();
+  const yd = localDate(new Date(Date.now()-86400000));
+  const [r1,r2] = await Promise.all([
+    api({action:'getRecords', month:d.slice(0,7)}),
+    api({action:'getRecords', month:yd.slice(0,7)})
+  ]);
+  const all = [...(r2.records||[]),...(r1.records||[])];
+  const seen = new Set();
+  records = all.filter(r=>{ if(seen.has(r.id))return false; seen.add(r.id); return true; });
+}
+
+function renderToday() {
+  const d  = localDate();
+  const el = document.getElementById('today-list');
+  const recs = records
+    .filter(r => r.date===d || (!r.checkOut && r.date!==d))
+    .slice().reverse();
+  if (!recs.length) { el.innerHTML='<p class="empty">No check-ins yet today.</p>'; return; }
+  el.innerHTML = recs.map(r => {
+    const t = teachers.find(x=>x.id===r.teacherId);
+    const badge = r.checkOut
+      ? `<span class="badge b-out">Done</span>`
+      : `<span class="badge b-in">In</span>`;
+    return `<div class="today-item">
+      <div>
+        <div class="t-name">${t?t.name:'Unknown'}</div>
+        <div class="t-time">${r.checkIn}${r.checkOut?' → '+r.checkOut:''}</div>
+      </div>${badge}</div>`;
+  }).join('');
+}
+
+// ── Admin: Teachers ──────────────────────────────────────
+async function addTeacher() {
+  const name = document.getElementById('new-name').value.trim();
+  const sub  = document.getElementById('new-sub').value.trim();
+  const pin  = document.getElementById('new-pin').value.trim();
+  if (!name)               { msg('admin-msg','Name is required.','err'); return; }
+  if (!/^\d{4}$/.test(pin)){ msg('admin-msg','PIN must be 4 digits.','err'); return; }
+
+  const btn = document.getElementById('add-btn');
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span>';
+
+  try {
+    const res = await api({action:'addTeacher', name, subject:sub, pin});
+    // The server never returns PINs back on getTeachers (security), so we
+    // keep the just-entered PIN in memory for this session only, purely
+    // so the admin can see it right after adding.
+    teachers.push({id:res.id, name, subject:sub, pin});
+    document.getElementById('new-name').value='';
+    document.getElementById('new-sub').value='';
+    document.getElementById('new-pin').value='';
+    msg('admin-msg',`${name} added successfully.`,'ok');
+    renderTeachers(); renderQR();
+  } catch(e) { msg('admin-msg',e.message,'err'); }
+  btn.disabled=false; btn.innerHTML='Add';
+}
+
+async function removeTeacher(id) {
+  if (!confirm('Remove this teacher? Records will be kept.')) return;
+  try {
+    await api({action:'removeTeacher', id});
+    teachers = teachers.filter(t=>t.id!==id);
+    renderTeachers(); renderQR();
+  } catch(e) { alert('Error: '+e.message); }
+}
+
+function renderTeachers() {
+  const el = document.getElementById('teacher-list');
+  if (!teachers.length) {
+    el.innerHTML='<div class="card-body"><p class="empty">No teachers yet.</p></div>'; return;
+  }
+  el.innerHTML=`<table class="tbl">
+    <thead><tr><th>Name</th><th>Subject</th><th>PIN</th><th></th></tr></thead>
+    <tbody>${teachers.map(t=>`<tr>
+      <td style="font-weight:600">${t.name}</td>
+      <td style="color:var(--muted)">${t.subject||'—'}</td>
+      <td><span style="font-family:'JetBrains Mono',monospace;letter-spacing:3px">${t.pin?t.pin:'••••'}</span></td>
+      <td style="text-align:right">
+        <button class="btn btn-danger btn-sm" onclick="removeTeacher('${t.id}')">Remove</button>
+      </td>
+    </tr>`).join('')}</tbody></table>
+    <p style="font-size:11px;color:var(--hint);padding:8px 20px 14px">
+      PINs are only shown once, right after you add a teacher — the server never sends them back,
+      so reloading the page hides them again. Write it down or tell the teacher when you add them.
+    </p>`;
+}
+
+// ── QR Code (single, shared by everyone) ─────────────────
+function renderQR() {
+  const base = (document.getElementById('base-url')?.value||'').trim()
+    || window.location.href.split('?')[0];
+  const grid = document.getElementById('qr-grid');
+  if (!grid) return;
+  grid.innerHTML = '';
+
+  const card = document.createElement('div');
+  card.className = 'qr-card kiosk-qr';
+  const wrap = document.createElement('div');
+  wrap.className = 'qr-wrap';
+  card.appendChild(wrap);
+  const label = document.createElement('div');
+  label.innerHTML = `<div class="qr-name">Scan to Check In / Out</div>
+    <div class="qr-sub">Same code for every teacher</div>
+    <div style="font-size:10px;color:var(--hint);font-family:'JetBrains Mono',monospace;word-break:break-all;margin-top:6px">${base}</div>`;
+  card.appendChild(label);
+  grid.appendChild(card);
+
+  new QRCode(wrap, {text:base, width:220, height:220, colorDark:'#1a1d27', colorLight:'#ffffff', correctLevel:QRCode.CorrectLevel.M});
+}
+
+// ── Report ───────────────────────────────────────────────
+function mins(a,b) {
+  const [ah,am]=a.split(':').map(Number);
+  const [bh,bm]=b.split(':').map(Number);
+  let m=(bh*60+bm)-(ah*60+am);
+  return m<0?m+1440:m;
+}
+function fmtH(m){ return Math.floor(m/60)+'h '+pad(m%60)+'m'; }
+
+function buildFilters() {
+  const now=new Date(), yr=now.getFullYear();
+  document.getElementById('f-teacher').innerHTML=
+    '<option value="all">All Teachers</option>'+
+    teachers.map(t=>`<option value="${t.id}">${t.name}</option>`).join('');
+  document.getElementById('f-month').innerHTML=
+    MONTHS.map((m,i)=>`<option value="${i}"${i===now.getMonth()?' selected':''}>${m}</option>`).join('');
+  document.getElementById('f-year').innerHTML=
+    [yr-1,yr,yr+1].map(y=>`<option value="${y}"${y===yr?' selected':''}>${y}</option>`).join('');
+}
+
+async function renderReport() {
+  const tid   = document.getElementById('f-teacher').value;
+  const month = parseInt(document.getElementById('f-month').value);
+  const year  = parseInt(document.getElementById('f-year').value);
+  const pfx   = year+'-'+pad(month+1);
+  const days  = new Date(year,month+1,0).getDate();
+  const today = new Date(); today.setHours(0,0,0,0);
+
+  document.getElementById('print-sub').textContent =
+    `${MONTHS[month]} ${year}${tid!=='all'?' — '+(teachers.find(t=>t.id===tid)||{name:''}).name:''}`;
+
+  document.getElementById('rep-loading').style.display='block';
+  document.getElementById('rep-out').innerHTML='';
+
+  let allRecs=[];
+  try {
+    const d = await api({action:'getRecords',month:pfx});
+    allRecs = d.records||[];
+    // Update cache
+    records = [...records.filter(r=>!r.date.startsWith(pfx)),...allRecs];
+  } catch(e) {
+    document.getElementById('rep-loading').style.display='none';
+    document.getElementById('rep-out').innerHTML=`<p class="empty">Error: ${e.message}</p>`;
+    return;
+  }
+  document.getElementById('rep-loading').style.display='none';
+
+  const tList = tid==='all' ? teachers : teachers.filter(t=>t.id===tid);
+  let html='';
+
+  tList.forEach(teacher=>{
+    const tRecs = allRecs.filter(r=>r.teacherId===teacher.id||r.teacherId===String(teacher.id));
+    let totalMins=0, present=0, absent=0;
+    let rows='';
+
+    for(let d=1;d<=days;d++){
+      const ds   = pfx+'-'+pad(d);
+      const day  = new Date(ds);
+      const dayN = day.toLocaleDateString('en-PK',{weekday:'short'});
+      const dr   = tRecs.filter(r=>r.date===ds);
+      const isPast = day<=today;
+
+      if(dr.length){
+        present++;
+        dr.forEach(r=>{
+          const m = (r.checkIn&&r.checkOut) ? mins(r.checkIn,r.checkOut) : null;
+          if(m) totalMins+=m;
+          const hrs    = m!=null ? fmtH(m) : '—';
+          const status = r.checkOut
+            ? `<span class="badge b-out">Complete</span>`
+            : `<span class="badge b-in">Open</span>`;
+          const ri = records.findIndex(x=>x.id===r.id);
+          rows+=`<tr>
+            <td style="font-family:'JetBrains Mono',monospace">${pad(d)}</td>
+            <td style="color:var(--muted)">${dayN}</td>
+            <td><span class="edit-btn" onclick="openEdit(${ri})" title="Edit">${r.checkIn||'—'} ✎</span></td>
+            <td><span class="edit-btn" onclick="openEdit(${ri})" title="Edit">${r.checkOut||'—'} ✎</span></td>
+            <td style="font-family:'JetBrains Mono',monospace">${hrs}</td>
+            <td>${status}</td></tr>`;
+        });
+      } else {
+        if(isPast) absent++;
+        rows+=`<tr style="opacity:.45">
+          <td style="font-family:'JetBrains Mono',monospace">${pad(d)}</td>
+          <td>${dayN}</td>
+          <td colspan="3" style="color:var(--hint)">${isPast?'Absent':'—'}</td>
+          <td>${isPast?`<span class="badge b-absent">Absent</span>`:''}</td></tr>`;
+      }
+    }
+
+    html+=`<div class="card">
+      <div class="card-head">
+        <div>
+          <span style="font-size:16px;font-weight:700;text-transform:none;letter-spacing:-.3px;color:var(--text)">${teacher.name}</span>
+          <span style="font-size:12px;color:var(--hint);margin-left:8px">${teacher.subject||''}</span>
+        </div>
+        <span style="font-size:12px;color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0">${MONTHS[month]} ${year}</span>
+      </div>
+      <div class="summary">
+        <div class="sum-card sum-present"><div class="sum-num">${present}</div><div class="sum-label">Present</div></div>
+        <div class="sum-card sum-absent"> <div class="sum-num">${absent}</div> <div class="sum-label">Absent</div></div>
+        <div class="sum-card sum-total">  <div class="sum-num">${present+absent}</div><div class="sum-label">Total Days</div></div>
+        <div class="sum-card sum-hours">  <div class="sum-num">${fmtH(totalMins)}</div><div class="sum-label">Hours Worked</div></div>
+      </div>
+      <table class="tbl">
+        <thead><tr><th style="width:50px">Date</th><th style="width:50px">Day</th>
+          <th>Check-in</th><th>Check-out</th><th>Hours</th><th>Status</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr>
+          <td colspan="3">Total — ${MONTHS[month]} ${year}</td>
+          <td style="font-family:'JetBrains Mono',monospace">${fmtH(totalMins)}</td>
+          <td colspan="2" style="color:var(--muted);font-weight:500">${present} present · ${absent} absent</td>
+        </tr></tfoot>
+      </table>
+    </div>`;
+  });
+
+  document.getElementById('rep-out').innerHTML = html||'<p class="empty">No records found.</p>';
+}
+
+// ── Edit record ──────────────────────────────────────────
+function openEdit(idx) {
+  const r = records[idx]; if(!r) return;
+  editId = r.id;
+  const t = teachers.find(x=>x.id===r.teacherId||x.id===String(r.teacherId));
+  document.getElementById('edit-name').textContent = t?t.name:'Edit Record';
+  document.getElementById('edit-date').textContent = r.date;
+  document.getElementById('edit-in').value  = r.checkIn||'';
+  document.getElementById('edit-out').value = r.checkOut||'';
+  document.getElementById('edit-err').textContent='';
+  document.getElementById('edit-modal').style.display='flex';
+  setTimeout(()=>document.getElementById('edit-in').focus(),50);
+}
+function closeEdit() { document.getElementById('edit-modal').style.display='none'; editId=null; }
+
+async function saveEdit() {
+  if (!editId) return;
+  const inV  = document.getElementById('edit-in').value;
+  const outV = document.getElementById('edit-out').value;
+  if (!inV) { document.getElementById('edit-err').textContent='Check-in time required.'; return; }
+  const btn=document.getElementById('edit-save');
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span>';
+  try {
+    await api({action:'editRecord',recordId:editId,checkIn:inV,checkOut:outV});
+    const r=records.find(x=>x.id===editId);
+    if(r){r.checkIn=inV;r.checkOut=outV||'';}
+    closeEdit(); renderReport(); renderToday();
+  } catch(e) { document.getElementById('edit-err').textContent='Error: '+e.message; }
+  btn.disabled=false; btn.innerHTML='Save';
+}
+
+async function delRecord() {
+  if (!editId||!confirm('Delete this record? Cannot be undone.')) return;
+  try {
+    await api({action:'deleteRecord',recordId:editId});
+    records=records.filter(r=>r.id!==editId);
+    closeEdit(); renderReport(); renderToday();
+  } catch(e) { alert('Error: '+e.message); }
+}
+</script>
+</body>
+</html>
