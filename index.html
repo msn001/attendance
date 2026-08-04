@@ -677,7 +677,7 @@ async function loadTodayRecords() {
     api({action:'getRecords', month:d.slice(0,7)}),
     api({action:'getRecords', month:yd.slice(0,7)})
   ]);
-  const all = [...(r2.records||[]),...(r1.records||[])];
+  const all = [...normalizeRecords(r2.records||[]),...normalizeRecords(r1.records||[])];
   const seen = new Set();
   records = all.filter(r=>{ if(seen.has(r.id))return false; seen.add(r.id); return true; });
 }
@@ -796,6 +796,29 @@ function deg2rad(deg){ return deg * Math.PI/180; }
 function haversineDistance(lat1,lon1,lat2,lon2){ const R=6371000; const dLat=deg2rad(lat2-lat1); const dLon=deg2rad(lon2-lon1); const a=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(deg2rad(lat1))*Math.cos(deg2rad(lat2))*Math.sin(dLon/2)*Math.sin(dLon/2); const c=2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a)); return R*c; }
 function formatTime(t){ if(!t) return '—'; const [hh,mm]=t.split(':').map(Number); if(isNaN(hh)||isNaN(mm)) return t; const suffix = hh>=12? 'PM':'AM'; const h = hh%12===0?12:hh%12; return h + ':' + String(mm).padStart(2,'0') + ' ' + suffix; }
 
+// Normalize records returned from server to predictable formats (YYYY-MM-DD and HH:MM)
+function normalizeRecord(r){
+  if(!r) return r;
+  const out = Object.assign({}, r);
+  // normalize date to yyyy-MM-dd
+  if(out.date && !/^\d{4}-\d{2}-\d{2}$/.test(out.date)){
+    const dd = new Date(out.date);
+    if(!isNaN(dd)) out.date = dd.getFullYear() + '-' + pad(dd.getMonth()+1) + '-' + pad(dd.getDate());
+  }
+  // normalize checkIn/checkOut
+  ['checkIn','checkOut'].forEach(k=>{
+    const v = out[k] || '';
+    if(/^\d{2}:\d{2}$/.test(v)) return;
+    const dt = new Date(v);
+    if(!isNaN(dt)) out[k] = pad(dt.getHours()) + ':' + pad(dt.getMinutes());
+    else out[k] = v || '';
+  });
+  // ensure distance is string/number consistent
+  if(out.distance===undefined) out.distance = '';
+  return out;
+}
+function normalizeRecords(arr){ return (arr||[]).map(normalizeRecord); }
+
 function loadDefaultTarget(){ defaultTargetArrival = localStorage.getItem('defaultTargetArrival') || defaultTargetArrival; const el = document.getElementById('default-target'); if(el) el.value = defaultTargetArrival; }
 function setDefaultTarget(){ const v = document.getElementById('default-target').value; if(!/^\d{2}:\d{2}$/.test(v)){ alert('Invalid time'); return; } localStorage.setItem('defaultTargetArrival', v); defaultTargetArrival = v; teachers = teachers.map(t=> ({...t, targetArrival: localStorage.getItem('targetArrival_'+t.id) || defaultTargetArrival})); renderTeachers(); renderReport(); }
 function timeToMinutes(t){ if(!t) return null; const parts = t.split(':').map(Number); if (parts.length<2||isNaN(parts[0])||isNaN(parts[1])) return null; return parts[0]*60+parts[1]; }
@@ -836,8 +859,8 @@ async function renderReport() {
   let allRecs=[];
   try {
     const d = await api({action:'getRecords',month:pfx});
-    allRecs = d.records||[];
-    // Update cache
+    allRecs = normalizeRecords(d.records||[]);
+    // Update cache — replace any records for this month with server copy
     records = [...records.filter(r=>!r.date.startsWith(pfx)),...allRecs];
   } catch(e) {
     document.getElementById('rep-loading').style.display='none';
@@ -984,7 +1007,17 @@ async function saveEdit() {
     } else if (editNewTeacherId && editNewDate) {
       const res = await api({action:'addRecord', teacherId:editNewTeacherId, date:editNewDate, checkIn:inV, checkOut:outV});
       const newId = res.id;
-      records.push({id:newId, teacherId:editNewTeacherId, date:editNewDate, checkIn:inV, checkOut:outV});
+      // After adding, fetch fresh month records from server to avoid format/cache mismatches
+      const monthPrefix = editNewDate.slice(0,7);
+      try{
+        const d = await api({action:'getRecords', month: monthPrefix});
+        const updated = normalizeRecords(d.records||[]);
+        // replace month records in cache
+        records = [...records.filter(r=>!r.date.startsWith(monthPrefix)), ...updated];
+      }catch(err){
+        // fallback: push local copy
+        records.push({id:newId, teacherId:editNewTeacherId, date:editNewDate, checkIn:inV, checkOut:outV});
+      }
     }
     closeEdit(); renderReport(); renderToday();
   } catch(e) { document.getElementById('edit-err').textContent='Error: '+e.message; }
