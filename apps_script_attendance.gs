@@ -24,6 +24,7 @@ function doGet(e){
       case 'deleteRecord': return jsonOk(deleteRecord(e.parameter.recordId));
       case 'getGeofence': return jsonOk({geofence: getGeofence()});
       case 'setGeofence': return jsonOk(setGeofence(e.parameter));
+      case 'addRecord': return jsonOk(addRecord(e.parameter));
       case 'getTeacherByPin': return jsonOk(getTeacherByPin(e.parameter.pin));
       default: return jsonError('Unknown action: '+action);
     }
@@ -184,4 +185,18 @@ function getTeacherByPin(pin){
   const t = getTeachers().find(x=>String(x.pin)===String(pin));
   if(!t) throw new Error('Not found');
   return t;
+}
+
+function addRecord(params){
+  const teacherId = (params.teacherId||'').toString();
+  const date = (params.date||'').toString();
+  const checkIn = (params.checkIn||'').toString();
+  const checkOut = (params.checkOut||'').toString();
+  const distance = params.distance ? Number(params.distance) : '';
+  if(!teacherId || !date || !checkIn) throw new Error('teacherId, date and checkIn are required');
+  const s = ss().getSheetByName('Records') || ss().insertSheet('Records');
+  if(s.getLastRow()===0) s.appendRow(['id','teacherId','date','checkIn','checkOut','distance']);
+  const id = Utilities.getUuid();
+  s.appendRow([id, teacherId, date, checkIn, checkOut||'', distance]);
+  return {id};
 }

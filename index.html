@@ -441,6 +441,8 @@ let records      = [];   // cached for current view
 let adminOpen    = false;
 let pendingScreen= null;
 let editId       = null;
+let editNewTeacherId = null;
+let editNewDate = null;
 let defaultTargetArrival = '09:00';
 let geofence = null; // {lat, lng, radiusMeters, enforce}
 
@@ -882,11 +884,13 @@ async function renderReport() {
         });
       } else {
         if(isPast) absent++;
-        rows+=`<tr style="opacity:.45">
-          <td style="font-family:'JetBrains Mono',monospace">${pad(d)}</td>
-          <td>${dayN}</td>
-          <td colspan="3" style="color:var(--hint)">${isPast?'Absent':'—'}</td>
-          <td>${isPast?`<span class="badge b-absent">Absent</span>`:''}</td></tr>`;
+      const addBtn = (isPast && adminOpen) ? `<button class="btn btn-sm" onclick="openEditNew('${teacher.id}','${ds}')">Add</button>` : '';
+      rows+=`<tr style="opacity:.45">
+        <td style="font-family:'JetBrains Mono',monospace">${pad(d)}</td>
+        <td>${dayN}</td>
+        <td>${isPast?`<span class="edit-btn">Absent</span>`:'—'}</td>
+        <td colspan="2" style="color:var(--hint)">${isPast? addBtn : ''}</td>
+        <td>${isPast?`<span class="badge b-absent">Absent</span>`:''}</td></tr>`;
       }
     }
 
@@ -937,9 +941,24 @@ async function teacherMyReport(){
 }
 
 // ── Edit record ──────────────────────────────────────────
+function openEditNew(teacherId, date) {
+  editId = null;
+  editNewTeacherId = teacherId;
+  editNewDate = date;
+  const t = teachers.find(x=>x.id===teacherId||String(x.id)===String(teacherId));
+  document.getElementById('edit-name').textContent = t?t.name:'New Record';
+  document.getElementById('edit-date').textContent = date;
+  document.getElementById('edit-in').value  = '';
+  document.getElementById('edit-out').value = '';
+  document.getElementById('edit-err').textContent='';
+  document.getElementById('edit-modal').style.display='flex';
+  setTimeout(()=>document.getElementById('edit-in').focus(),50);
+}
+
 function openEdit(idx) {
   const r = records[idx]; if(!r) return;
   editId = r.id;
+  editNewTeacherId = null; editNewDate = null;
   const t = teachers.find(x=>x.id===r.teacherId||x.id===String(r.teacherId));
   document.getElementById('edit-name').textContent = t?t.name:'Edit Record';
   document.getElementById('edit-date').textContent = r.date;
@@ -949,19 +968,24 @@ function openEdit(idx) {
   document.getElementById('edit-modal').style.display='flex';
   setTimeout(()=>document.getElementById('edit-in').focus(),50);
 }
-function closeEdit() { document.getElementById('edit-modal').style.display='none'; editId=null; }
+function closeEdit() { document.getElementById('edit-modal').style.display='none'; editId=null; editNewTeacherId=null; editNewDate=null; }
 
 async function saveEdit() {
-  if (!editId) return;
   const inV  = document.getElementById('edit-in').value;
   const outV = document.getElementById('edit-out').value;
   if (!inV) { document.getElementById('edit-err').textContent='Check-in time required.'; return; }
   const btn=document.getElementById('edit-save');
   btn.disabled=true; btn.innerHTML='<span class="spin"></span>';
   try {
-    await api({action:'editRecord',recordId:editId,checkIn:inV,checkOut:outV});
-    const r=records.find(x=>x.id===editId);
-    if(r){r.checkIn=inV;r.checkOut=outV||'';}
+    if (editId) {
+      await api({action:'editRecord',recordId:editId,checkIn:inV,checkOut:outV});
+      const r=records.find(x=>x.id===editId);
+      if(r){r.checkIn=inV;r.checkOut=outV||'';}
+    } else if (editNewTeacherId && editNewDate) {
+      const res = await api({action:'addRecord', teacherId:editNewTeacherId, date:editNewDate, checkIn:inV, checkOut:outV});
+      const newId = res.id;
+      records.push({id:newId, teacherId:editNewTeacherId, date:editNewDate, checkIn:inV, checkOut:outV});
+    }
     closeEdit(); renderReport(); renderToday();
   } catch(e) { document.getElementById('edit-err').textContent='Error: '+e.message; }
   btn.disabled=false; btn.innerHTML='Save';
