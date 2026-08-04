@@ -109,10 +109,25 @@ function addTeacher(params){
   return {id};
 }
 
+function formatDateCell(v){
+  if(!v && v!==0) return '';
+  if(Object.prototype.toString.call(v) === '[object Date]'){
+    try{ return Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd'); }catch(e){ return String(v); }
+  }
+  return String(v);
+}
+
 function getRecords(monthPrefix){
   // monthPrefix like '2026-08' or undefined -> return all
   const rows = sheetRows('Records');
-  const out = rows.map(r=>({id:String(r.id), teacherId:String(r.teacherId), date:String(r.date||''), checkIn:String(r.checkIn||''), checkOut:String(r.checkOut||''), distance: r.distance||''}));
+  const out = rows.map(r=>({
+    id: String(r.id),
+    teacherId: String(r.teacherId),
+    date: formatDateCell(r.date),
+    checkIn: String(r.checkIn||''),
+    checkOut: String(r.checkOut||''),
+    distance: r.distance||''
+  }));
   if(monthPrefix) return out.filter(x=>x.date && x.date.indexOf(monthPrefix)===0);
   return out;
 }
