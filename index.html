@@ -189,7 +189,14 @@ main{flex:1;padding:1.5rem;max-width:1000px;margin:0 auto;width:100%}
   .surface,.surface2{background:white!important}
   .print-head{display:block!important}
   :root{--text:#000;--muted:#555;--border:#ccc;--surface:#fff;--surface2:#f5f5f5;--surface3:#eee}
+
+  /* Improve table & layout for print */
+  .tbl th, .tbl td { font-size:11px; padding:8px; }
+  .summary { grid-template-columns:repeat(2,1fr); gap:8px; }
+  .qr-grid, .pin-pad-wrap, .keypad, .today-list { display:none!important; }
+  table { page-break-inside:avoid; width:100%; }
 }
+
 .print-head{display:none;margin-bottom:1rem;border-bottom:2px solid #000;padding-bottom:.5rem}
 .print-head h1{font-size:18px}
 .print-head p{font-size:12px;color:#555}
@@ -290,6 +297,7 @@ main{flex:1;padding:1.5rem;max-width:1000px;margin:0 auto;width:100%}
             <button class="key key-back" onclick="pinBack()">⌫</button>
           </div>
           <div class="pin-hint">Enter your 4-digit PIN — checks you in or out automatically</div>
+          <div style="margin-top:8px"><button class="btn btn-sm" onclick="teacherMyReport()">My Report (PIN)</button></div>
         </div>
       </div>
       <div id="scan-result" class="scan-result" style="display:none"></div>
@@ -342,7 +350,7 @@ main{flex:1;padding:1.5rem;max-width:1000px;margin:0 auto;width:100%}
   </div>
 
   <div class="card">
-    <div class="card-head"><span class="card-title">Default Target Arrival (All)</span></div>
+    <div class="card-head"><span class="card-title">Default Target Arrival (All) &amp; Geofence</span></div>
     <div class="card-body">
       <div class="form-row" style="grid-template-columns:1fr auto;align-items:end">
         <div class="form-group">
@@ -353,7 +361,24 @@ main{flex:1;padding:1.5rem;max-width:1000px;margin:0 auto;width:100%}
           <button class="btn btn-primary" onclick="setDefaultTarget()">Apply to All</button>
         </div>
       </div>
-      <div style="margin-top:8px;font-size:12px;color:var(--muted)">Set a default target arrival time used when a teacher has no specific target.</div>
+      <div style="margin-top:10px;display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:10px;align-items:end">
+        <div class="form-group">
+          <label class="label">Center Latitude</label>
+          <input class="input" id="gf-lat" placeholder="e.g. 24.8607">
+        </div>
+        <div class="form-group">
+          <label class="label">Center Longitude</label>
+          <input class="input" id="gf-lng" placeholder="e.g. 67.0011">
+        </div>
+        <div class="form-group">
+          <label class="label">Radius (meters)</label>
+          <input class="input" id="gf-radius" placeholder="100" type="number">
+        </div>
+        <div style="display:flex;align-items:flex-end">
+          <button class="btn btn-primary" onclick="setGeofence()">Save Geofence</button>
+        </div>
+      </div>
+      <div style="margin-top:8px;font-size:12px;color:var(--muted)">Set geofence center and radius. When enabled, check-in is allowed only when within the radius. Geofence is saved server-side.</div>
     </div>
   </div>
 
@@ -417,6 +442,7 @@ let adminOpen    = false;
 let pendingScreen= null;
 let editId       = null;
 let defaultTargetArrival = '09:00';
+let geofence = null; // {lat, lng, radiusMeters, enforce}
 
 // ── API ──────────────────────────────────────────────────
 async function api(params) {
@@ -441,6 +467,8 @@ async function boot() {
       ...t,
       targetArrival: localStorage.getItem('targetArrival_' + t.id) || defaultTargetArrival
     }));
+    // Load geofence configuration from server (if available)
+    await loadGeofence();
     await loadTodayRecords();
     renderToday();
   } catch(e) {
@@ -560,22 +588,46 @@ async function submitPin() {
 
   showScan('⏳', 'Checking…', '', 'One moment', 'info');
   try {
-    const res = await api({ action:'scan', pin, date:dateStr, time:timeStr });
+    // If geofence is configured, attempt to get current position
+    let distance = null;
+    if (geofence && (geofence.lat || geofence.latitude)) {
+      let pos = null;
+      try {
+        pos = await new Promise((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, {enableHighAccuracy:true, timeout:7000});
+        });
+      } catch(err) { pos = null; }
+      if (!pos) throw new Error('Location unavailable — cannot mark attendance outside the academy.');
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      const centerLat = parseFloat(geofence.lat || geofence.latitude);
+      const centerLng = parseFloat(geofence.lng || geofence.longitude);
+      const radius = parseFloat(geofence.radiusMeters || geofence.radius || 0);
+      distance = Math.round(haversineDistance(lat,lng,centerLat,centerLng));
+      // include distance in the UI and enforce
+      if ((geofence.enforce===undefined || geofence.enforce) && radius>0 && distance>radius) {
+        throw new Error(`You are outside the allowed area (${distance} m from center).`);
+      }
+    }
+
+    const params = { action:'scan', pin, date:dateStr, time:timeStr };
+    if (distance !== null) params.distance = distance;
+    const res = await api(params);
     if (res.action === 'checkIn') {
-      records.push({id:res.recordId, teacherId:findTeacherIdByName(res.teacher), date:res.date, checkIn:res.time, checkOut:''});
-      showScan('✅', res.teacher, res.time, 'Checked in successfully', 'in');
+      records.push({id:res.recordId, teacherId:findTeacherIdByName(res.teacher), date:res.date, checkIn:res.time, checkOut:'', distance:distance});
+      showScan('✅', res.teacher, formatTime(res.time), 'Checked in successfully', 'in');
     } else {
       const r = records.find(x=>x.id===res.recordId);
-      if (r) r.checkOut = res.time;
+      if (r) { r.checkOut = res.time; if (distance!=null) r.distance = distance; }
       const overnight = r && r.date !== dateStr;
-      showScan('👋', res.teacher, res.time,
+      showScan('👋', res.teacher, formatTime(res.time),
         'Checked out' + (overnight ? ' (overnight shift)' : ''), 'out');
     }
     renderToday();
     pinBuffer = ''; renderPinDots();
   } catch(e) {
     renderPinDots('err');
-    showScan('❌', 'Incorrect PIN', '', e.message, 'err');
+    showScan('❌', 'Error', '', e.message, 'err');
     setTimeout(()=>{ pinBuffer=''; renderPinDots(); }, 700);
   }
   pinBusy = false;
@@ -643,7 +695,7 @@ function renderToday() {
     return `<div class="today-item">
       <div>
         <div class="t-name">${t?t.name:'Unknown'}</div>
-        <div class="t-time">${r.checkIn}${r.checkOut?' → '+r.checkOut:''}</div>
+            <div class="t-time">${formatTime(r.checkIn)}${r.checkOut?' → '+formatTime(r.checkOut):''}${r.distance?` · ${r.distance} m`:''}</div>
       </div>${badge}</div>`;
   }).join('');
 }
@@ -732,6 +784,16 @@ function renderQR() {
 }
 
 // ── Report ───────────────────────────────────────────────
+async function loadGeofence(){ try{ const d = await api({action:'getGeofence'}); geofence = d.geofence || null; if(geofence){ const latEl=document.getElementById('gf-lat'); const lngEl=document.getElementById('gf-lng'); const rEl=document.getElementById('gf-radius'); if(latEl) latEl.value = geofence.lat; if(lngEl) lngEl.value = geofence.lng; if(rEl) rEl.value = geofence.radiusMeters; } }catch(e){ console.warn('loadGeofence failed',e); geofence = null; } }
+
+async function setGeofence(){ const lat = parseFloat(document.getElementById('gf-lat').value); const lng = parseFloat(document.getElementById('gf-lng').value); const radius = parseFloat(document.getElementById('gf-radius').value); if(isNaN(lat)||isNaN(lng)||isNaN(radius)){ alert('Please enter valid latitude, longitude and radius.'); return; } try{ await api({action:'setGeofence', lat, lng, radius}); geofence = {lat,lng,radiusMeters:radius}; msg('admin-msg','Geofence saved.','ok'); }catch(e){ // fallback to localStorage if server not available
+    localStorage.setItem('geofence', JSON.stringify({lat,lng,radiusMeters:radius})); geofence={lat,lng,radiusMeters:radius}; msg('admin-msg','Geofence saved locally (server failed).','info'); }
+}
+
+function deg2rad(deg){ return deg * Math.PI/180; }
+function haversineDistance(lat1,lon1,lat2,lon2){ const R=6371000; const dLat=deg2rad(lat2-lat1); const dLon=deg2rad(lon2-lon1); const a=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(deg2rad(lat1))*Math.cos(deg2rad(lat2))*Math.sin(dLon/2)*Math.sin(dLon/2); const c=2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a)); return R*c; }
+function formatTime(t){ if(!t) return '—'; const [hh,mm]=t.split(':').map(Number); if(isNaN(hh)||isNaN(mm)) return t; const suffix = hh>=12? 'PM':'AM'; const h = hh%12===0?12:hh%12; return h + ':' + String(mm).padStart(2,'0') + ' ' + suffix; }
+
 function loadDefaultTarget(){ defaultTargetArrival = localStorage.getItem('defaultTargetArrival') || defaultTargetArrival; const el = document.getElementById('default-target'); if(el) el.value = defaultTargetArrival; }
 function setDefaultTarget(){ const v = document.getElementById('default-target').value; if(!/^\d{2}:\d{2}$/.test(v)){ alert('Invalid time'); return; } localStorage.setItem('defaultTargetArrival', v); defaultTargetArrival = v; teachers = teachers.map(t=> ({...t, targetArrival: localStorage.getItem('targetArrival_'+t.id) || defaultTargetArrival})); renderTeachers(); renderReport(); }
 function timeToMinutes(t){ if(!t) return null; const parts = t.split(':').map(Number); if (parts.length<2||isNaN(parts[0])||isNaN(parts[1])) return null; return parts[0]*60+parts[1]; }
@@ -813,10 +875,10 @@ async function renderReport() {
           rows+=`<tr>
             <td style="font-family:'JetBrains Mono',monospace">${pad(d)}</td>
             <td style="color:var(--muted)">${dayN}</td>
-            <td><span class="edit-btn" onclick="openEdit(${ri})" title="Edit">${r.checkIn||'—'} ✎</span></td>
-            <td><span class="edit-btn" onclick="openEdit(${ri})" title="Edit">${r.checkOut||'—'} ✎</span></td>
+            <td><span class="edit-btn" onclick="openEdit(${ri})" title="Edit">${formatTime(r.checkIn)||'—'} ✎</span></td>
+            <td><span class="edit-btn" onclick="openEdit(${ri})" title="Edit">${formatTime(r.checkOut)||'—'} ✎</span></td>
             <td style="font-family:'JetBrains Mono',monospace">${hrs}</td>
-            <td>${status} ${lateBadge}</td></tr>`;
+            <td>${status} ${lateBadge}${r.distance?` <span style="font-family:'JetBrains Mono',monospace;color:var(--muted);margin-left:6px">${r.distance} m</span>`:''}</td></tr>`;
         });
       } else {
         if(isPast) absent++;
@@ -839,8 +901,8 @@ async function renderReport() {
       <div class="summary">
         <div class="sum-card sum-present"><div class="sum-num">${present}</div><div class="sum-label">Present</div></div>
         <div class="sum-card sum-absent"> <div class="sum-num">${absent}</div> <div class="sum-label">Absent</div></div>
-        <div class="sum-card sum-total">  <div class="sum-num">${present+absent}</div><div class="sum-label">Total Days</div></div>
-        <div class="sum-card sum-hours">  <div class="sum-num">${fmtH(totalMins)}</div><div class="sum-label">Hours Worked</div></div>
+        <div class="sum-card sum-total">  <div class="sum-num">${Math.max(0,present-lateCount)}</div><div class="sum-label">On-time</div></div>
+        <div class="sum-card sum-hours">  <div class="sum-num">${lateCount}</div><div class="sum-label">Late</div></div>
       </div>
       <table class="tbl">
         <thead><tr><th style="width:50px">Date</th><th style="width:50px">Day</th>
@@ -849,13 +911,29 @@ async function renderReport() {
         <tfoot><tr>
           <td colspan="3">Total — ${MONTHS[month]} ${year}</td>
           <td style="font-family:'JetBrains Mono',monospace">${fmtH(totalMins)}</td>
-          <td colspan="2" style="color:var(--muted);font-weight:500">${present} present · ${absent} absent · ${lateCount} late</td>
+          <td colspan="2" style="color:var(--muted);font-weight:500">${present} present · ${absent} absent · ${Math.max(0,present-lateCount)} on-time · ${lateCount} late</td>
         </tr></tfoot>
       </table>
     </div>`;
   });
 
   document.getElementById('rep-out').innerHTML = html||'<p class="empty">No records found.</p>';
+}
+
+// Teacher self-report (PIN) ─────────────────────────────────
+async function teacherMyReport(){
+  const pin = prompt('Enter your 4-digit PIN to view your report');
+  if(!pin) return;
+  try{
+    const d = await api({action:'getTeacherByPin', pin});
+    const tid = d.id || d.teacherId || d.teacher_id;
+    if(!tid) throw new Error('Teacher not found');
+    // ensure filters are built
+    buildFilters();
+    document.getElementById('f-teacher').value = tid;
+    goto('report');
+    renderReport();
+  }catch(e){ alert('Error: '+e.message); }
 }
 
 // ── Edit record ──────────────────────────────────────────
