@@ -49,6 +49,23 @@ function ss(){
   return SpreadsheetApp.openById(SPREADSHEET_ID);
 }
 
+function canonicalHeader(h){
+  if(!h) return '';
+  const k = String(h).toString().trim().toLowerCase();
+  if(k==='id') return 'id';
+  if(k==='teacherid' || (k.indexOf('teacher')>=0 && k.indexOf('id')>=0)) return 'teacherId';
+  if(k==='teacher' || k==='name') return 'name';
+  if(k==='subject') return 'subject';
+  if(k==='pin') return 'pin';
+  if(k==='target' || k==='targetarrival' || k==='target_arrival') return 'targetArrival';
+  if(k==='date') return 'date';
+  if(k==='checkin' || k==='check_in') return 'checkIn';
+  if(k==='checkout' || k==='check_out') return 'checkOut';
+  if(k==='distance') return 'distance';
+  // default: return original trimmed key
+  return String(h).trim();
+}
+
 function sheetRows(sheetName){
   const s = ss().getSheetByName(sheetName);
   if(!s) return [];
@@ -57,9 +74,21 @@ function sheetRows(sheetName){
   const headers = vals[0];
   return vals.slice(1).map(r=>{
     const obj = {};
-    headers.forEach((h,i)=> obj[String(h).trim()] = r[i]);
+    headers.forEach((h,i)=> {
+      const key = canonicalHeader(h);
+      obj[key] = r[i];
+    });
     return obj;
   });
+}
+
+function headerIndex(headers, name){
+  if(!headers || !name) return -1;
+  for(let i=0;i<headers.length;i++){
+    if(canonicalHeader(headers[i])===name) return i;
+    if(String(headers[i]).toString().trim()===name) return i;
+  }
+  return -1;
 }
 
 function getTeachers(){
@@ -108,15 +137,19 @@ function scan(params){
   for(let i=1;i<data.length;i++){
     const row = data[i];
     const rowObj = {};
-    headers.forEach((h,idx)=> rowObj[String(h).trim()] = row[idx]);
+    headers.forEach((h,idx)=> {
+      rowObj[canonicalHeader(h)] = row[idx];
+    });
     if(String(rowObj.teacherId)===String(teacher.id) && String(rowObj.date)===date && !rowObj.checkOut){ openRow = {index:i+1, row: rowObj}; break; }
   }
   if(openRow){
     // check-out
     const rowIndex = openRow.index;
     const ci = openRow.row.checkIn || '';
-    s.getRange(rowIndex, headers.indexOf('checkOut')+1).setValue(time);
-    if(distance!=='') s.getRange(rowIndex, headers.indexOf('distance')+1).setValue(distance);
+    const idxCheckOut = headerIndex(headers, 'checkOut');
+    if(idxCheckOut>=0) s.getRange(rowIndex, idxCheckOut+1).setValue(time);
+    const idxDistance = headerIndex(headers, 'distance');
+    if(distance!=='' && idxDistance>=0) s.getRange(rowIndex, idxDistance+1).setValue(distance);
     return {action:'checkOut', recordId: String(openRow.row.id), teacher: teacher.name, date: date, time: time};
   } else {
     // create check-in
@@ -135,10 +168,13 @@ function editRecord(params){
   if(!s) throw new Error('No Records sheet');
   const data = s.getDataRange().getValues();
   const headers = data[0];
+  const idxId = headerIndex(headers,'id');
+  const idxCheckIn = headerIndex(headers,'checkIn');
+  const idxCheckOut = headerIndex(headers,'checkOut');
   for(let i=1;i<data.length;i++){
-    if(String(data[i][headers.indexOf('id')])===recordId){
-      if(checkIn!=='') s.getRange(i+1, headers.indexOf('checkIn')+1).setValue(checkIn);
-      if(checkOut!=='') s.getRange(i+1, headers.indexOf('checkOut')+1).setValue(checkOut);
+    if(String(data[i][idxId])===recordId){
+      if(checkIn!=='' && idxCheckIn>=0) s.getRange(i+1, idxCheckIn+1).setValue(checkIn);
+      if(checkOut!=='' && idxCheckOut>=0) s.getRange(i+1, idxCheckOut+1).setValue(checkOut);
       return {recordId};
     }
   }
@@ -151,8 +187,9 @@ function deleteRecord(recordId){
   if(!s) throw new Error('No Records sheet');
   const data = s.getDataRange().getValues();
   const headers = data[0];
+  const idxId = headerIndex(headers,'id');
   for(let i=1;i<data.length;i++){
-    if(String(data[i][headers.indexOf('id')])===recordId){
+    if(String(data[i][idxId])===recordId){
       s.deleteRow(i+1);
       return {recordId};
     }
