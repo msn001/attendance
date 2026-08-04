@@ -318,10 +318,16 @@ main{flex:1;padding:1.5rem;max-width:1000px;margin:0 auto;width:100%}
           <input class="input" id="new-sub" placeholder="Mathematics">
         </div>
         <div class="form-group">
+          <label class="label">Target Arrival</label>
+          <input type="time" class="input" id="new-target" value="09:00">
+        </div>
+        <div class="form-group">
           <label class="label">4-digit PIN</label>
           <input class="input" id="new-pin" maxlength="4" placeholder="1234"
             style="font-family:'JetBrains Mono',monospace;letter-spacing:4px">
         </div>
+      </div>
+      <div style="margin-top:8px">
         <button class="btn btn-primary" id="add-btn" onclick="addTeacher()">Add</button>
       </div>
       <div id="admin-msg" style="margin-top:10px"></div>
@@ -333,6 +339,22 @@ main{flex:1;padding:1.5rem;max-width:1000px;margin:0 auto;width:100%}
       <span class="card-title">Registered Teachers</span>
     </div>
     <div id="teacher-list"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><span class="card-title">Default Target Arrival (All)</span></div>
+    <div class="card-body">
+      <div class="form-row" style="grid-template-columns:1fr auto;align-items:end">
+        <div class="form-group">
+          <label class="label">Default Target</label>
+          <input type="time" class="input" id="default-target">
+        </div>
+        <div style="display:flex;align-items:flex-end">
+          <button class="btn btn-primary" onclick="setDefaultTarget()">Apply to All</button>
+        </div>
+      </div>
+      <div style="margin-top:8px;font-size:12px;color:var(--muted)">Set a default target arrival time used when a teacher has no specific target.</div>
+    </div>
   </div>
 
   <div class="card">
@@ -394,6 +416,7 @@ let records      = [];   // cached for current view
 let adminOpen    = false;
 let pendingScreen= null;
 let editId       = null;
+let defaultTargetArrival = '09:00';
 
 // ── API ──────────────────────────────────────────────────
 async function api(params) {
@@ -411,7 +434,13 @@ async function boot() {
   tick(); setInterval(tick, 1000);
   try {
     const d = await api({ action: 'getTeachers' });
-    teachers = d.teachers;
+    teachers = d.teachers || [];
+    // Load default target and per-teacher overrides from localStorage
+    loadDefaultTarget();
+    teachers = teachers.map(t => ({
+      ...t,
+      targetArrival: localStorage.getItem('targetArrival_' + t.id) || defaultTargetArrival
+    }));
     await loadTodayRecords();
     renderToday();
   } catch(e) {
@@ -623,22 +652,25 @@ function renderToday() {
 async function addTeacher() {
   const name = document.getElementById('new-name').value.trim();
   const sub  = document.getElementById('new-sub').value.trim();
+  const target = document.getElementById('new-target')?.value || '';
   const pin  = document.getElementById('new-pin').value.trim();
   if (!name)               { msg('admin-msg','Name is required.','err'); return; }
   if (!/^\d{4}$/.test(pin)){ msg('admin-msg','PIN must be 4 digits.','err'); return; }
+  if (target && !/^\d{2}:\d{2}$/.test(target)) { msg('admin-msg','Invalid target time.','err'); return; }
 
   const btn = document.getElementById('add-btn');
   btn.disabled=true; btn.innerHTML='<span class="spin"></span>';
 
   try {
-    const res = await api({action:'addTeacher', name, subject:sub, pin});
-    // The server never returns PINs back on getTeachers (security), so we
-    // keep the just-entered PIN in memory for this session only, purely
-    // so the admin can see it right after adding.
-    teachers.push({id:res.id, name, subject:sub, pin});
+    const res = await api({action:'addTeacher', name, subject:sub, pin, targetArrival: target});
+    // Keep the just-entered PIN/target in memory for this session only
+    const teacherObj = {id:res.id, name, subject:sub, pin, targetArrival: target || defaultTargetArrival};
+    teachers.push(teacherObj);
+    if (target) localStorage.setItem('targetArrival_' + res.id, target);
     document.getElementById('new-name').value='';
     document.getElementById('new-sub').value='';
     document.getElementById('new-pin').value='';
+    document.getElementById('new-target').value='';
     msg('admin-msg',`${name} added successfully.`,'ok');
     renderTeachers(); renderQR();
   } catch(e) { msg('admin-msg',e.message,'err'); }
@@ -660,10 +692,11 @@ function renderTeachers() {
     el.innerHTML='<div class="card-body"><p class="empty">No teachers yet.</p></div>'; return;
   }
   el.innerHTML=`<table class="tbl">
-    <thead><tr><th>Name</th><th>Subject</th><th>PIN</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>Subject</th><th>Target</th><th>PIN</th><th></th></tr></thead>
     <tbody>${teachers.map(t=>`<tr>
       <td style="font-weight:600">${t.name}</td>
       <td style="color:var(--muted)">${t.subject||'—'}</td>
+      <td style="font-family:'JetBrains Mono',monospace">${t.targetArrival||defaultTargetArrival}</td>
       <td><span style="font-family:'JetBrains Mono',monospace;letter-spacing:3px">${t.pin?t.pin:'••••'}</span></td>
       <td style="text-align:right">
         <button class="btn btn-danger btn-sm" onclick="removeTeacher('${t.id}')">Remove</button>
@@ -699,6 +732,10 @@ function renderQR() {
 }
 
 // ── Report ───────────────────────────────────────────────
+function loadDefaultTarget(){ defaultTargetArrival = localStorage.getItem('defaultTargetArrival') || defaultTargetArrival; const el = document.getElementById('default-target'); if(el) el.value = defaultTargetArrival; }
+function setDefaultTarget(){ const v = document.getElementById('default-target').value; if(!/^\d{2}:\d{2}$/.test(v)){ alert('Invalid time'); return; } localStorage.setItem('defaultTargetArrival', v); defaultTargetArrival = v; teachers = teachers.map(t=> ({...t, targetArrival: localStorage.getItem('targetArrival_'+t.id) || defaultTargetArrival})); renderTeachers(); renderReport(); }
+function timeToMinutes(t){ if(!t) return null; const parts = t.split(':').map(Number); if (parts.length<2||isNaN(parts[0])||isNaN(parts[1])) return null; return parts[0]*60+parts[1]; }
+function isLate(checkIn,target){ const ci = timeToMinutes(checkIn); const tg = timeToMinutes(target); if(ci==null||tg==null) return false; return ci>tg; }
 function mins(a,b) {
   const [ah,am]=a.split(':').map(Number);
   const [bh,bm]=b.split(':').map(Number);
@@ -750,7 +787,7 @@ async function renderReport() {
 
   tList.forEach(teacher=>{
     const tRecs = allRecs.filter(r=>r.teacherId===teacher.id||r.teacherId===String(teacher.id));
-    let totalMins=0, present=0, absent=0;
+    let totalMins=0, present=0, absent=0, lateCount=0;
     let rows='';
 
     for(let d=1;d<=days;d++){
@@ -766,6 +803,9 @@ async function renderReport() {
           const m = (r.checkIn&&r.checkOut) ? mins(r.checkIn,r.checkOut) : null;
           if(m) totalMins+=m;
           const hrs    = m!=null ? fmtH(m) : '—';
+          const target = teacher.targetArrival || defaultTargetArrival;
+          let lateBadge = '';
+          if (r.checkIn && isLate(r.checkIn, target)) { lateCount++; lateBadge = `<span class="badge" style="background:var(--amber-bg);color:var(--amber)">Late</span>`; }
           const status = r.checkOut
             ? `<span class="badge b-out">Complete</span>`
             : `<span class="badge b-in">Open</span>`;
@@ -776,7 +816,7 @@ async function renderReport() {
             <td><span class="edit-btn" onclick="openEdit(${ri})" title="Edit">${r.checkIn||'—'} ✎</span></td>
             <td><span class="edit-btn" onclick="openEdit(${ri})" title="Edit">${r.checkOut||'—'} ✎</span></td>
             <td style="font-family:'JetBrains Mono',monospace">${hrs}</td>
-            <td>${status}</td></tr>`;
+            <td>${status} ${lateBadge}</td></tr>`;
         });
       } else {
         if(isPast) absent++;
@@ -809,7 +849,7 @@ async function renderReport() {
         <tfoot><tr>
           <td colspan="3">Total — ${MONTHS[month]} ${year}</td>
           <td style="font-family:'JetBrains Mono',monospace">${fmtH(totalMins)}</td>
-          <td colspan="2" style="color:var(--muted);font-weight:500">${present} present · ${absent} absent</td>
+          <td colspan="2" style="color:var(--muted);font-weight:500">${present} present · ${absent} absent · ${lateCount} late</td>
         </tr></tfoot>
       </table>
     </div>`;
